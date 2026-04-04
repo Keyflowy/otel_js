@@ -21,7 +21,7 @@ This wrapper runs Node with:
 ```bash
 node \
   --experimental-loader ./node_modules/@opentelemetry/instrumentation/hook.mjs \
-  --import ./tracing.js \
+  --import ./tracing.mjs \
   /path/to/.output/server/index.mjs
 ```
 

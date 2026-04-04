@@ -10,7 +10,7 @@ if (!entry) {
 }
 
 const rootDir = dirname(fileURLToPath(import.meta.url))
-const tracingPath = resolve(rootDir, 'tracing.js')
+const tracingPath = resolve(rootDir, 'tracing.mjs')
 const hookPath = resolve(rootDir, 'node_modules/@opentelemetry/instrumentation/hook.mjs')
 
 const child = spawn(process.execPath, [
