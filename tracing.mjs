@@ -2,8 +2,10 @@ import process from 'node:process'
 import { SpanKind } from '@opentelemetry/api'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node'
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { resourceFromAttributes } from '@opentelemetry/resources'
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { ParentBasedSampler, TraceIdRatioBasedSampler } from '@opentelemetry/sdk-trace-base'
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 
@@ -17,6 +19,20 @@ function resolveSampleRate(value) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
     console.error('[OTel] Invalid OTEL_TRACES_SAMPLE_RATE, expected a number between 0 and 1')
+    process.exit(1)
+  }
+
+  return parsed
+}
+
+function resolveMetricsExportInterval(value) {
+  if (value == null || value.trim() === '') {
+    return 60_000
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.error('[OTel] Invalid OTEL_METRICS_EXPORT_INTERVAL, expected a positive number of milliseconds')
     process.exit(1)
   }
 
@@ -65,6 +81,7 @@ if (!globalThis[sdkKey]) {
   const apiSampleRate = process.env.OTEL_API_TRACES_SAMPLE_RATE == null || process.env.OTEL_API_TRACES_SAMPLE_RATE.trim() === ''
     ? sampleRate
     : resolveSampleRate(process.env.OTEL_API_TRACES_SAMPLE_RATE)
+  const metricsExportInterval = resolveMetricsExportInterval(process.env.OTEL_METRICS_EXPORT_INTERVAL)
 
   if (!otelEndpoint) {
     console.error('[OTel] Missing SIGNOZ_OTEL_EXPORTER_ENDPOINT')
@@ -80,6 +97,13 @@ if (!globalThis[sdkKey]) {
     traceExporter: new OTLPTraceExporter({
       url: otelEndpoint,
       headers
+    }),
+    metricReader: new PeriodicExportingMetricReader({
+      exporter: new OTLPMetricExporter({
+        url: otelEndpoint.replace(/\/v1\/traces$/, '/v1/metrics'),
+        headers
+      }),
+      exportIntervalMillis: metricsExportInterval
     }),
     sampler: new RouteAwareSampler(sampleRate, apiSampleRate),
     instrumentations: [getNodeAutoInstrumentations()],
@@ -103,6 +127,7 @@ if (!globalThis[sdkKey]) {
     serviceName,
     authEnabled: !!otelAuthKey,
     sampleRate,
-    apiSampleRate
+    apiSampleRate,
+    metricsExportInterval
   })
 }
