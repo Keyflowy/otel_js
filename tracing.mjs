@@ -88,6 +88,8 @@ if (!globalThis[sdkKey]) {
     process.exit(1)
   }
 
+  const traceEndpoint = otelEndpoint
+  const metricsEndpoint = otelEndpoint.replace(/\/v1\/traces$/, '/v1/metrics')
   const headers = {}
   if (otelAuthKey) {
     headers['x-otel-key'] = otelAuthKey
@@ -95,12 +97,12 @@ if (!globalThis[sdkKey]) {
 
   const sdk = new NodeSDK({
     traceExporter: new OTLPTraceExporter({
-      url: otelEndpoint,
+      url: traceEndpoint,
       headers
     }),
     metricReader: new PeriodicExportingMetricReader({
       exporter: new OTLPMetricExporter({
-        url: otelEndpoint.replace(/\/v1\/traces$/, '/v1/metrics'),
+        url: metricsEndpoint,
         headers
       }),
       exportIntervalMillis: metricsExportInterval
@@ -123,7 +125,7 @@ if (!globalThis[sdkKey]) {
   })
 
   console.log('[OTel] Tracing initialized', {
-    endpoint: otelEndpoint,
+    endpoint: traceEndpoint,
     serviceName,
     authEnabled: !!otelAuthKey,
     sampleRate,
