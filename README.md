@@ -30,6 +30,8 @@ node \
 - `SIGNOZ_OTEL_EXPORTER_ENDPOINT`
 - `SIGNOZ_OTEL_AUTH_KEY`
 - `OTEL_SERVICE_NAME`
+- `OTEL_TRACES_SAMPLE_RATE`
+- `OTEL_API_TRACES_SAMPLE_RATE`
 - `OTEL_LOG_LEVEL`
 
 `SIGNOZ_OTEL_EXPORTER_ENDPOINT` is required. Example:
@@ -38,5 +40,7 @@ node \
 export SIGNOZ_OTEL_EXPORTER_ENDPOINT="https://your-signoz.example.com/v1/traces"
 export SIGNOZ_OTEL_AUTH_KEY="replace-me"
 export OTEL_SERVICE_NAME="blog"
+export OTEL_TRACES_SAMPLE_RATE="0.1"
+export OTEL_API_TRACES_SAMPLE_RATE="1"
 node ./run.mjs /path/to/.output/server/index.mjs
 ```

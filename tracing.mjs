@@ -1,16 +1,70 @@
 import process from 'node:process'
+import { SpanKind } from '@opentelemetry/api'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { resourceFromAttributes } from '@opentelemetry/resources'
+import { ParentBasedSampler, TraceIdRatioBasedSampler } from '@opentelemetry/sdk-trace-base'
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 
 const sdkKey = Symbol.for('otel-js.sdk')
+
+function resolveSampleRate(value) {
+  if (value == null || value.trim() === '') {
+    return 1
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    console.error('[OTel] Invalid OTEL_TRACES_SAMPLE_RATE, expected a number between 0 and 1')
+    process.exit(1)
+  }
+
+  return parsed
+}
+
+class RouteAwareSampler {
+  constructor(defaultRate, apiRate) {
+    this.defaultSampler = new ParentBasedSampler({
+      root: new TraceIdRatioBasedSampler(defaultRate)
+    })
+    this.apiSampler = new ParentBasedSampler({
+      root: new TraceIdRatioBasedSampler(apiRate)
+    })
+  }
+
+  shouldSample(context, traceId, spanName, spanKind, attributes, links) {
+    const target = attributes?.['http.target']
+    const route = attributes?.['http.route']
+    const url = attributes?.['url.path']
+    const path = typeof route === 'string'
+      ? route
+      : typeof target === 'string'
+        ? target
+        : typeof url === 'string'
+          ? url
+          : ''
+
+    if (spanKind === SpanKind.SERVER && path.startsWith('/api')) {
+      return this.apiSampler.shouldSample(context, traceId, spanName, spanKind, attributes, links)
+    }
+
+    return this.defaultSampler.shouldSample(context, traceId, spanName, spanKind, attributes, links)
+  }
+
+  toString() {
+    return 'RouteAwareSampler'
+  }
+}
 
 if (!globalThis[sdkKey]) {
   const otelEndpoint = process.env.SIGNOZ_OTEL_EXPORTER_ENDPOINT
   const otelAuthKey = process.env.SIGNOZ_OTEL_AUTH_KEY || ''
   const serviceName = process.env.OTEL_SERVICE_NAME || 'blog'
+  const sampleRate = resolveSampleRate(process.env.OTEL_TRACES_SAMPLE_RATE)
+  const apiSampleRate = process.env.OTEL_API_TRACES_SAMPLE_RATE == null || process.env.OTEL_API_TRACES_SAMPLE_RATE.trim() === ''
+    ? sampleRate
+    : resolveSampleRate(process.env.OTEL_API_TRACES_SAMPLE_RATE)
 
   if (!otelEndpoint) {
     console.error('[OTel] Missing SIGNOZ_OTEL_EXPORTER_ENDPOINT')
@@ -27,6 +81,7 @@ if (!globalThis[sdkKey]) {
       url: otelEndpoint,
       headers
     }),
+    sampler: new RouteAwareSampler(sampleRate, apiSampleRate),
     instrumentations: [getNodeAutoInstrumentations()],
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: serviceName
@@ -46,6 +101,8 @@ if (!globalThis[sdkKey]) {
   console.log('[OTel] Tracing initialized', {
     endpoint: otelEndpoint,
     serviceName,
-    authEnabled: !!otelAuthKey
+    authEnabled: !!otelAuthKey,
+    sampleRate,
+    apiSampleRate
   })
 }
