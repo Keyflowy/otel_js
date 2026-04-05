@@ -1,5 +1,5 @@
 import process from 'node:process'
-import { SpanKind } from '@opentelemetry/api'
+import { SpanKind, metrics } from '@opentelemetry/api'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node'
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
@@ -37,6 +37,34 @@ function resolveMetricsExportInterval(value) {
   }
 
   return parsed
+}
+
+function registerProcessMemoryMetrics() {
+  const meter = metrics.getMeter('otel-js')
+  const rssGauge = meter.createObservableGauge('nodejs.process.memory.rss', {
+    description: 'Resident set size for the current Node.js process',
+    unit: 'By'
+  })
+  const heapUsedGauge = meter.createObservableGauge('nodejs.process.memory.heap.used', {
+    description: 'V8 heap currently used by the current Node.js process',
+    unit: 'By'
+  })
+  const externalGauge = meter.createObservableGauge('nodejs.process.memory.external', {
+    description: 'Memory used by C++ objects bound to JavaScript objects',
+    unit: 'By'
+  })
+
+  meter.addBatchObservableCallback((observableResult) => {
+    const memoryUsage = process.memoryUsage()
+
+    observableResult.observe(rssGauge, memoryUsage.rss)
+    observableResult.observe(heapUsedGauge, memoryUsage.heapUsed)
+    observableResult.observe(externalGauge, memoryUsage.external)
+  }, [
+    rssGauge,
+    heapUsedGauge,
+    externalGauge
+  ])
 }
 
 class RouteAwareSampler {
@@ -115,6 +143,7 @@ if (!globalThis[sdkKey]) {
   })
 
   sdk.start()
+  registerProcessMemoryMetrics()
   globalThis[sdkKey] = sdk
 
   process.once('SIGTERM', () => {
